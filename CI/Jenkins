@@ -24,7 +24,7 @@ pipeline {
         stage('Clone Repository') {
             steps {
                 cleanWs()
-                git branch: 'main', url: 'https://github.com/ventaoo/ml-pipeline-3.git'
+                git branch: 'main', url: 'https://github.com/ventaoo/ml-pipeline-2.git'
             }
         }
 

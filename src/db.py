@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from typing import List, Tuple
 
+load_dotenv()
 # 从环境变量中获取数据库连接信息
 DB_HOST = os.getenv('POSTGRES_HOST')
 DB_PORT = os.getenv('POSTGRES_PORT')
