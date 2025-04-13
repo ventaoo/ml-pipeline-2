@@ -3,6 +3,13 @@ pipeline {
     
     environment {
         DOCKERHUB_CREDS=credentials('ba7bf351-123e-409d-8d95-1c72fb78ffe4')  // 引用 Jenkins 凭据
+
+        POSTGRES_HOST=credentials('db-host')
+        POSTGRES_PORT=credentials('db-port')
+        POSTGRES_DB=credentials('db-name')
+        POSTGRES_USER=credentials('db-user')
+        POSTGRES_PASSWORD=credentials('db-password')
+
         LC_ALL = "en_US.UTF-8"
         LANG    = "en_US.UTF-8"
         LANGUAGE = "en_US.UTF-8"
@@ -17,7 +24,7 @@ pipeline {
         stage('Clone Repository') {
             steps {
                 cleanWs()
-                git branch: 'main', url: 'https://github.com/ventaoo/ml-pipeline-2.git'
+                git branch: 'main', url: 'https://github.com/ventaoo/ml-pipeline-3.git'
             }
         }
 
@@ -31,12 +38,24 @@ pipeline {
         stage('Create and run docker container') {
             steps {
                 script {
-                    dir('ml-pipeline-2') {
-                        // 尝试构建镜像，无论成功与否都启动容器
-                        try {
-                            sh 'docker-compose build'
-                        } finally {
-                            sh 'docker-compose up -d'
+                    dir('ml-pipeline-3') {
+                        withCredentials([
+                            string(credentialsId: 'db-host', variable: 'POSTGRES_HOST'),
+                            string(credentialsId: 'db-port', variable: 'POSTGRES_PORT'),
+                            string(credentialsId: 'db-name', variable: 'POSTGRES_DB'),
+                            string(credentialsId: 'db-user', variable: 'POSTGRES_USER'),
+                            string(credentialsId: 'db-password', variable: 'POSTGRES_PASSWORD')
+                        ]) {
+                            // 尝试构建镜像，无论成功与否都启动容器
+                            try {
+                                sh """
+                                POSTGRES_HOST=${POSTGRES_HOST} POSTGRES_PORT=${POSTGRES_PORT} POSTGRES_DB=${POSTGRES_DB} POSTGRES_USER=${POSTGRES_USER} POSTGRES_PASSWORD=${POSTGRES_PASSWORD} docker-compose build
+                                """
+                            } finally {
+                                sh """
+                                POSTGRES_HOST=${POSTGRES_HOST} POSTGRES_PORT=${POSTGRES_PORT} POSTGRES_DB=${POSTGRES_DB} POSTGRES_USER=${POSTGRES_USER} POSTGRES_PASSWORD=${POSTGRES_PASSWORD} docker-compose up -d
+                                """
+                            }
                         }
                     }
                 }
@@ -46,10 +65,10 @@ pipeline {
         // 阶段 2：检查容器日志
         stage('Checkout container logs') {
             steps {
-                dir('ml-pipeline-2') {
+                dir('ml-pipeline-3') {
                     script {
                         def containerId = sh(
-                            script: 'docker ps -qf "name=^ml-pipeline-2"',
+                            script: 'docker ps -qf "name=^ml-pipeline-3"',
                             returnStdout: true
                         ).trim()
 
@@ -77,7 +96,7 @@ pipeline {
         // 阶段 4：推送镜像到 DockerHub
         stage('Push') {
             steps {
-                sh 'docker push zwttt/ml-pipeline-2'
+                sh 'docker push zwttt/ml-pipeline-3:latest'
             }
         }
     }
