@@ -9,6 +9,8 @@ pipeline {
         POSTGRES_DB=credentials('db-name')
         POSTGRES_USER=credentials('db-user')
         POSTGRES_PASSWORD=credentials('db-password')
+        
+        IMAGE_TAG = 'zwttt/ml-pipeline-2:latest'
 
         LC_ALL = "en_US.UTF-8"
         LANG    = "en_US.UTF-8"
@@ -38,23 +40,19 @@ pipeline {
         stage('Create and run docker container') {
             steps {
                 script {
-                    dir('ml-pipeline-3') {
+                    dir('ml-pipeline-2') {
+                        // 尝试构建镜像，无论成功与否都启动容器
                         withCredentials([
-                            string(credentialsId: 'db-host', variable: 'POSTGRES_HOST'),
-                            string(credentialsId: 'db-port', variable: 'POSTGRES_PORT'),
-                            string(credentialsId: 'db-name', variable: 'POSTGRES_DB'),
-                            string(credentialsId: 'db-user', variable: 'POSTGRES_USER'),
-                            string(credentialsId: 'db-password', variable: 'POSTGRES_PASSWORD')
+                            string(credentialsId: 'db-host', variable: 'DB_HOST'),
+                            string(credentialsId: 'db-name', variable: 'DB_NAME'),
+                            string(credentialsId: 'db-user', variable: 'DB_USER'),
+                            string(credentialsId: 'db-port', variable: 'DB_PORT'),
+                            string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
                         ]) {
-                            // 尝试构建镜像，无论成功与否都启动容器
                             try {
-                                sh """
-                                POSTGRES_HOST=${POSTGRES_HOST} POSTGRES_PORT=${POSTGRES_PORT} POSTGRES_DB=${POSTGRES_DB} POSTGRES_USER=${POSTGRES_USER} POSTGRES_PASSWORD=${POSTGRES_PASSWORD} docker-compose build
-                                """
+                                sh 'docker-compose build'
                             } finally {
-                                sh """
-                                POSTGRES_HOST=${POSTGRES_HOST} POSTGRES_PORT=${POSTGRES_PORT} POSTGRES_DB=${POSTGRES_DB} POSTGRES_USER=${POSTGRES_USER} POSTGRES_PASSWORD=${POSTGRES_PASSWORD} docker-compose up -d
-                                """
+                                sh 'docker-compose up -d'
                             }
                         }
                     }
@@ -65,18 +63,22 @@ pipeline {
         // 阶段 2：检查容器日志
         stage('Checkout container logs') {
             steps {
-                dir('ml-pipeline-3') {
+                dir('ml-pipeline-2') {
                     script {
-                        def containerId = sh(
-                            script: 'docker ps -qf "name=^ml-pipeline-3"',
+                        // 获取所有匹配的容器ID（可能多行）
+                        def containerIds = sh(
+                            script: 'docker ps -qf "name=^ml-pipeline-2"',
                             returnStdout: true
                         ).trim()
 
-                        if (containerId.isEmpty()) {
+                        if (containerIds.isEmpty()) {
                             echo "No container running"
                         } else {
-                            // 输出容器最后 1000 行日志（非持续跟踪）
-                            sh "docker logs --tail 1000 ${containerId}"
+                            // 按行分割容器ID，逐个处理
+                            containerIds.split('\n').each { id ->
+                                echo "Fetching logs for container: ${id}"
+                                sh "docker logs --tail 1000 ${id}"
+                            }
                         }
                     }
                 }
@@ -86,7 +88,7 @@ pipeline {
         // 阶段 3：检查测试覆盖率报告
         stage('Checkout coverage report') {
             steps {
-                dir('ml_pipeline') {
+                dir('ml-pipeline-2') {
                     // 显示容器日志的最后 10 行（含时间戳）
                     sh 'docker-compose logs -t --tail 10'
                 }
@@ -96,15 +98,20 @@ pipeline {
         // 阶段 4：推送镜像到 DockerHub
         stage('Push') {
             steps {
-                sh 'docker push zwttt/ml-pipeline-3:latest'
+                sh 'docker push zwttt/ml-pipeline-2'
             }
         }
     }
     
     post {
+        success {
+            // 触发 CD 流水线，传递 env.IMAGE_TAG 参数
+            build job: 'ml-cd-pipeline-2', 
+                  parameters: [string(name: 'IMAGE_TAG', value: env.IMAGE_TAG)], // ✅ 正确：通过 env 访问
+                  wait: false
+        }
         always {
             sh 'docker logout'
         }
-    }
-    
+    }   
 }
